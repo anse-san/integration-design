@@ -684,6 +684,79 @@ function PreTab({search,lang,jumpTo,onJumpHandled}){
     })));
 }
 
+/* ── Acceptance Criteria ── */
+function AcceptanceTab({search,lang,jumpTo,onJumpHandled}){
+  const ACs=BASE.acceptance_criteria||[];
+  const ref=useRef({});
+  const [selected,setSelected]=useState(null);
+  const L=(obj,field)=>lang==='es'?(obj[field+'_es']||obj[field]||''):(obj[field+'_en']||obj[field]||'');
+  const optName=(ac,idx)=>{
+    if(lang==='en'&&ac.options_en&&ac.options_en[idx])return ac.options_en[idx];
+    return ac.options[idx];
+  };
+  const optDesc=(ac,optKey)=>{
+    if(lang==='en'&&ac.optionDescriptions_en&&ac.optionDescriptions_en[optKey])return ac.optionDescriptions_en[optKey];
+    if(ac.optionDescriptions&&ac.optionDescriptions[optKey])return ac.optionDescriptions[optKey];
+    return '';
+  };
+  const rules=useMemo(()=>loadRules(),[]);
+  const getRelatedRules=useCallback((ac)=>{
+    const cat=ac.category;
+    return rules.filter(r=>{
+      const txt=(r.if||'')+' '+(r.then||'');
+      return txt.includes('AC['+cat+']')||txt.includes('AC['+ac.id+']');
+    });
+  },[rules]);
+  const items=useMemo(()=>{
+    if(!search)return ACs;
+    const q=search.toLowerCase();
+    return ACs.filter(d=>(d.category||'').toLowerCase().includes(q)||(d.category_en||'').toLowerCase().includes(q)||(d.category_es||'').toLowerCase().includes(q)||(d.options||[]).some(o=>o.toLowerCase().includes(q))||(d.options_en||[]).some(o=>o.toLowerCase().includes(q))||(d.description||'').toLowerCase().includes(q)||(d.description_en||'').toLowerCase().includes(q)||(d.description_es||'').toLowerCase().includes(q));
+  },[search,ACs]);
+  useEffect(()=>{
+    if(!jumpTo)return;
+    const name=jumpTo.replace(/^AC\[/,'').replace(/\]$/,'');
+    const match=ACs.find(a=>a.category===name||a.id===name);
+    if(match){setSelected(match.id);}
+    onJumpHandled&&onJumpHandled();
+  },[jumpTo]);
+
+  // ── Detail view ──
+  if(selected){
+    const ac=ACs.find(d=>d.id===selected);
+    if(!ac){setSelected(null);return null;}
+    const related=getRelatedRules(ac);
+    return React.createElement('div',{className:'pil-detail'},
+      React.createElement('button',{className:'pil-back',onClick:()=>setSelected(null)},'← Back to acceptance criteria'),
+      React.createElement('div',{className:'pil-hdr'},
+        React.createElement('div',{className:'pil-title'},ac.id,' · ',L(ac,'category'))),
+      L(ac,'description')&&React.createElement('div',{className:'pil-desc'},L(ac,'description')),
+      React.createElement('div',{className:'pil-section'},
+        React.createElement('div',{className:'pil-section-title'},'✅ ',lang==='es'?'Opciones':'Options',' (',(ac.options||[]).length,')'),
+        (ac.options||[]).map((o,i)=>React.createElement('div',{className:'pil-opt',key:i},
+          React.createElement('div',{className:'pil-opt-name'},optName(ac,i)),
+          optDesc(ac,o)&&React.createElement('div',{className:'pil-opt-desc'},optDesc(ac,o))))),
+      related.length>0&&React.createElement('div',{className:'pil-section'},
+        React.createElement('div',{className:'pil-section-title'},'📋 ',lang==='es'?'Reglas relacionadas':'Related Rules',' (',related.length,')'),
+        React.createElement('div',{className:'pil-related',style:{display:'flex',flexWrap:'wrap',gap:4}},
+          related.map(r=>React.createElement('span',{className:'pil-rule-chip',key:r.id},
+            React.createElement('span',{className:'cp',style:{background:r.connector==='REQUIRES'?'var(--req-bg)':r.connector==='IMPLIES'?'var(--imp-bg)':r.connector==='EXCLUDES'?'var(--exc-bg)':'var(--dft-bg)',color:r.connector==='REQUIRES'?'var(--req)':r.connector==='IMPLIES'?'var(--imp)':r.connector==='EXCLUDES'?'var(--exc)':'var(--dft)',borderRadius:4,fontWeight:700}},r.connector),
+            ' ',r.id)))));
+  }
+
+  // ── Grid view ──
+  if(!items.length) return React.createElement('div',{className:'ct'},React.createElement('div',{className:'empty'},React.createElement('div',{className:'empty-icon'},'✅'),React.createElement('div',null,lang==='es'?'No hay acceptance criteria':'No acceptance criteria yet')));
+  return React.createElement('div',{className:'ct'},React.createElement('div',{className:'g2'},
+    items.map(d=>{
+      const isJump=jumpTo&&(jumpTo==='AC['+d.id+']' || jumpTo==='AC['+d.category+']');
+      return React.createElement('div',{className:'card'+(isJump?' jump-hl':''),key:d.id,ref:el=>ref.current[d.id]=el,
+        onClick:()=>setSelected(d.id),style:{cursor:'pointer'}},
+        React.createElement('div',{className:'ctitle'},d.id,' · ',L(d,'category')),
+        L(d,'description')&&React.createElement('div',{className:'card-desc',style:{display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}},L(d,'description')),
+        React.createElement('div',{className:'pills'},(d.options||[]).map((o,i)=>React.createElement('span',{className:'pill',key:i},optName(d,i)))),
+        React.createElement('div',{style:{marginTop:8,fontSize:11,color:'var(--accent)',fontWeight:600}},'Click to view details →'));
+    })));
+}
+
 /* ── Rules table ── */
 function RulesTab({search,editMode,lang,onDecClick,onPrecClick}){
   const [filter,setFilter]=useState(null);
@@ -843,12 +916,13 @@ function App(){
   const tabs=[
     {id:'decisions',label:'Integration Pillars',count:BASE.decisions.length},
     {id:'preconditions',label:'Pre-conditions',count:BASE.preconditions.length},
+    {id:'acceptance',label:'Acceptance Criteria',count:(BASE.acceptance_criteria||[]).length},
     {id:'rules',label:'Rules',count:cleanRules+'+'+draftRules},
     {id:'tests',label:'Tests',count:BASE.tests.length},
     {id:'guidelines',label:'Guidelines',count:null},
   ];
   function chTab(id){setTab(id);setSearch('');}
-  const tabLabels={decisions:'integration pillars',preconditions:'pre-conditions',rules:'rules',tests:'tests',guidelines:'guidelines'};
+  const tabLabels={decisions:'integration pillars',preconditions:'pre-conditions',acceptance:'acceptance criteria',rules:'rules',tests:'tests',guidelines:'guidelines'};
   return React.createElement('div',null,
     React.createElement('header',{className:'hdr'},
       React.createElement('div',{className:'logo'},'menta',React.createElement('span',null,'tech')),
@@ -866,6 +940,7 @@ function App(){
     tab==='guidelines'&&React.createElement(GuidelinesTab,null),
     tab==='decisions'&&React.createElement(DecisionsTab,{search,lang,jumpTo:jumpDec,onJumpHandled:()=>setJumpDec(null)}),
     tab==='preconditions'&&React.createElement(PreTab,{search,lang,jumpTo:jumpPrec,onJumpHandled:()=>setJumpPrec(null)}),
+    tab==='acceptance'&&React.createElement(AcceptanceTab,{search,lang}),
     tab==='rules'&&React.createElement(RulesTab,{search,editMode,lang,onDecClick:handleDecClick,onPrecClick:handlePrecClick}),
     tab==='tests'&&React.createElement(TestsTab,{search,lang}));
 }
